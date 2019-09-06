@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1711f9035e49a9c9d8c722f5f1fb17157bd5a284d8b8e8b5c55cd0cdc1acfbc2
+-- hash: 98653a32de5cc9ce79236688f993b9f9e5603c6cf4a2119680fc730e1981a940
 
 name:           echidna
 version:        1.0.0.0
@@ -49,7 +49,6 @@ library
     , lens-aeson
     , mtl >=2.2.1 && <2.3
     , optparse-applicative >=0.13.0 && <0.15
-    , parallel
     , process >=1.4.3 && <1.7
     , random
     , stm
@@ -95,7 +94,6 @@ executable echidna-parallel
     , lens-aeson
     , mtl >=2.2.1 && <2.3
     , optparse-applicative >=0.13.0 && <0.15
-    , parallel
     , process >=1.4.3 && <1.7
     , random
     , stm
@@ -146,7 +144,6 @@ test-suite echidna-testsuite
     , lens-aeson
     , mtl >=2.2.1 && <2.3
     , optparse-applicative >=0.13.0 && <0.15
-    , parallel
     , process >=1.4.3 && <1.7
     , random
     , stm

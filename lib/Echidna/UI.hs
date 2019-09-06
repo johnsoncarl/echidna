@@ -51,10 +51,9 @@ type Names = Role -> Addr -> String
 
 -- | Given rules for pretty-printing associated address, pretty-print a 'Transaction'.
 ppTx :: (MonadReader x m, Has Names x) => Tx -> m String
-ppTx (Tx c s r g v) = let sOf = either ppSolCall (const "<CREATE>") in
+ppTx (Tx c s r v) = let sOf = either ppSolCall (const "<CREATE>") in
   view hasLens <&> \f -> sOf c ++ f Sender s ++ f Receiver r
-                      ++ (if g /= 0xffffffff then "" else "Gas: "   ++ show g)
-                      ++ (if v == 0          then "" else "Value: " ++ show v)
+                      ++ (if v == 0 then "" else "Value: " ++ show v)
 
 -- | Given a number of boxes checked and a number of total boxes, pretty-print progress in box-checking.
 progress :: Int -> Int -> String
@@ -95,8 +94,20 @@ ppCampaign c = (++) <$> ppTests c <*> pure (maybe "" ("\n" ++) . ppCoverage $ c 
 campaignStatus :: (MonadReader x m, Has CampaignConf x, Has Names x) => Campaign -> m (Widget ())
 campaignStatus c = let mSection = maybe emptyWidget ((hBorder <=>) . padLeft (Pad 2) . str) in do
   stats <- padLeft (Pad 2) . str <$> ppTests c <&> (<=> mSection (ppCoverage $ c ^. coverage))
+  --stats2 <- padLeft (Pad 2) . str <$> ppTests c2 <&> (<=> mSection (ppCoverage $ c2 ^. coverage))
   bl <- bool emptyWidget (str "Campaign complete, C-c or esc to print report") <$> isDone c
-  pure . hCenter . hLimit 120 . joinBorders $ borderWithLabel (str "Echidna") stats <=> bl
+  --bl2 <- bool emptyWidget (str "Campaign complete, C-c or esc to print report") <$> isDone c2
+  pure . hCenter . hLimit 120 . joinBorders $ borderWithLabel (str "Echidna") (center (stats <=> bl ) <+> vBorder)
+
+campaignStatus2 :: (MonadReader x m, Has CampaignConf x, Has Names x) => Campaign -> m (Widget ())
+campaignStatus2 c2 = let mSection = maybe emptyWidget ((hBorder <=>) . padLeft (Pad 2) . str) in do
+  -- stats <- padLeft (Pad 2) . str <$> ppTests c <&> (<=> mSection (ppCoverage $ c ^. coverage))
+  stats2 <- padLeft (Pad 2) . str <$> ppTests c2 <&> (<=> mSection (ppCoverage $ c2 ^. coverage))
+  -- bl <- bool emptyWidget (str "Campaign complete, C-c or esc to print report") <$> isDone c
+  bl2 <- bool emptyWidget (str "Campaign complete, C-c or esc to print report") <$> isDone c2
+  pure . hCenter . hLimit 120 . joinBorders $ borderWithLabel (str "Echidna") (vBorder <+> center (stats2 <=> bl2 ))
+
+
 
 -- | Check if we should stop drawing (or updating) the dashboard, then do the right thing.
 monitor :: (MonadReader x m, Has CampaignConf x, Has Names x)
@@ -109,7 +120,20 @@ monitor cleanup = let
   se _ c (VtyEvent (EvKey KEsc _))                         = liftIO cleanup >> halt c
   se _ c (VtyEvent (EvKey (KChar 'c') l)) | MCtrl `elem` l = liftIO cleanup >> halt c
   se _ c _                                                 = continue c in
-    liftM2 (,) (view hasLens) (view hasLens) <&> \s ->
+                                                                          liftM2 (,) (view hasLens) (view hasLens) <&> \s ->
+      App (pure . cs s) neverShowCursor (se s) pure (const $ forceAttrMap mempty)
+
+monitor2 :: (MonadReader x m, Has CampaignConf x, Has Names x)
+        => IO a -> IO a -> m (App Campaign Campaign ())
+monitor2 cleanup cleanup2 = let
+  cs :: (CampaignConf, Names) -> Campaign -> Widget ()
+  cs s c = runReader (campaignStatus c) s
+
+  se s _ (AppEvent c') = continue c' & if runReader (isDone c') s then (liftIO cleanup >>) else id
+  se _ c (VtyEvent (EvKey KEsc _))                         = liftIO cleanup >> halt c
+  se _ c (VtyEvent (EvKey (KChar 'c') l)) | MCtrl `elem` l = liftIO cleanup >> halt c
+  se _ c _                                                 = continue c in
+                                                                          liftM2 (,) (view hasLens) (view hasLens) <&> \s ->
       App (pure . cs s) neverShowCursor (se s) pure (const $ forceAttrMap mempty)
 
 -- | Heuristic check that we're in a sensible terminal (not a pipe)
@@ -119,7 +143,7 @@ isTerminal = liftIO $ (&&) <$> queryTerminal (Fd 0) <*> queryTerminal (Fd 1)
 -- | Set up and run an Echidna 'Campaign' while drawing the dashboard, then print 'Campaign' status
 -- once done.
 ui :: ( MonadCatch m, MonadRandom m, MonadReader x m, MonadUnliftIO m
-      , Has TestConf x, Has TxConf x, Has CampaignConf x, Has Names x, Has UIConf x)
+      , Has TestConf x, Has CampaignConf x, Has Names x, Has UIConf x)
    => VM        -- ^ Initial VM state
    -> World     -- ^ Initial world state
    -> [SolTest] -- ^ Tests to evaluate
@@ -132,7 +156,9 @@ ui v w ts d = let xfer e = use hasLens >>= \c -> isDone c >>= ($ e c) . bool id 
   let g' = fromMaybe (d' ^. defSeed) g
   c <- if s then do bc <- liftIO $ newBChan 100
                     t <- forkIO $ campaign (xfer $ liftIO . writeBChan bc) v w ts d >> pure ()
-                    a <- monitor (killThread t)
+                    t2 <- forkIO $ campaign (xfer $ liftIO . writeBChan bc) v w ts d >> pure ()
+                    a <- monitor2 (killThread t) (killThread t2)
+                    -- a <- monitor (killThread t2)
                     liftIO (customMain (mkVty defaultConfig) (Just bc) a $ Campaign mempty mempty d')
             else campaign (pure ()) v w ts d
   liftIO . putStrLn =<< view (hasLens . finished) <*> pure c <*> pure g'
