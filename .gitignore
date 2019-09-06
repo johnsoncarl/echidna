@@ -18,7 +18,3 @@ cabal.sandbox.config
 .stack-work/
 cabal.project.local
 .HTF/
-libff/
-.travis/libff/
-*.lock
-
